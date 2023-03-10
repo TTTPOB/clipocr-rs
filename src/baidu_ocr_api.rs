@@ -1,5 +1,6 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use log::{debug, error, info};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::time::SystemTime;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -37,7 +38,6 @@ impl From<AccessTokenResponse> for OcrState {
     }
 }
 
-
 impl OcrConfig {
     pub fn new(app_id: String, api_key: String, sec_key: String) -> Self {
         Self {
@@ -46,7 +46,6 @@ impl OcrConfig {
             sec_key,
         }
     }
-    
     pub fn from_yaml(path: &str) -> Self {
         let config = std::fs::read_to_string(path).unwrap();
         let config: OcrConfig = serde_yaml::from_str(&config).unwrap();
@@ -63,7 +62,12 @@ impl OcrConfig {
         resp.into()
     }
     async fn refresh_state_if_expired(&self, state: &OcrState) -> OcrState {
-        if state.expire_time < 1000 {
+        // get current unix timestamp
+        let now = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        if state.expire_time < now {
             self.refresh_state().await
         } else {
             state.clone()
@@ -77,6 +81,7 @@ impl OcrConfig {
             return new_state;
         }
         let state = OcrState::from_yaml(path);
+        debug!("expire time in state file: {}", state.expire_time);
         let new_state = self.refresh_state_if_expired(&state).await;
         if state != new_state {
             new_state.to_yaml(path);
@@ -84,6 +89,7 @@ impl OcrConfig {
         state
     }
 }
+
 impl OcrState {
     pub fn new(access_token: String, expire_time: u64) -> Self {
         Self {
@@ -115,7 +121,7 @@ impl BaiduGeneralBasic {
         Self {
             access_token: state.access_token.clone(),
         }
-}
+    }
 }
 pub struct BaiduAccurateBasic {
     access_token: String,
@@ -141,7 +147,11 @@ pub trait OcrApi {
             .send()
             .await
             .unwrap();
-        let result: Self::OcrResult = resp.json().await.unwrap();
+        let resp_text = resp.text().await.unwrap();
+        let result: Self::OcrResult = serde_json::from_str(&resp_text).unwrap_or_else(|_| {
+            error!("failed to parse response: {}", resp_text);
+            panic!();
+        });
         result
     }
     async fn get_text_result(&self, image_base64: &str) -> Vec<String> {
@@ -154,12 +164,19 @@ impl OcrApi for BaiduOcrApis {
     type OcrResult = BaiduOcrResult;
     fn url(&self) -> String {
         match self {
-            BaiduOcrApis::GeneralBasic(api) => format!("{}?access_token={}", BaiduGeneralBasic::BASEURL, api.access_token),
-            BaiduOcrApis::AccurateBasic(api) => format!("{}?access_token={}", BaiduAccurateBasic::BASEURL, api.access_token),
+            BaiduOcrApis::GeneralBasic(api) => format!(
+                "{}?access_token={}",
+                BaiduGeneralBasic::BASEURL,
+                api.access_token
+            ),
+            BaiduOcrApis::AccurateBasic(api) => format!(
+                "{}?access_token={}",
+                BaiduAccurateBasic::BASEURL,
+                api.access_token
+            ),
         }
     }
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct BaiduOcrResult {

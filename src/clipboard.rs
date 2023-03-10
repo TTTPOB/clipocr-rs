@@ -1,6 +1,6 @@
 use arboard::Clipboard;
-use image::{ImageBuffer};
 use base64::Engine;
+use image::ImageBuffer;
 
 struct ClipboardImage<'a>(arboard::ImageData<'a>);
 impl ClipboardImage<'_> {

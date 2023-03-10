@@ -1,8 +1,8 @@
 use clap::{Parser, Subcommand};
 use clipocr_rs::baidu_ocr_api::{self as ocr, OcrApi};
 use clipocr_rs::clipboard::{get_img_base64_from_clipboard, set_clipboard};
+use log::{debug, error, info, warn};
 use rustyline::Editor;
-
 
 // get platform specifc newline symbol
 // windows, macos and linux
@@ -30,7 +30,7 @@ enum Commands {
     GenerateConfig,
 }
 
-fn read_content(e: &mut Editor<()>,prompt: &str) -> String {
+fn read_content(e: &mut Editor<()>, prompt: &str) -> String {
     let line = e.readline(prompt).unwrap();
     match line.trim() {
         "" => read_content(e, prompt),
@@ -61,6 +61,7 @@ fn gen_config() {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+    env_logger::init();
     match &cli.subcmd {
         Commands::GenerateConfig => {
             gen_config();
@@ -76,14 +77,18 @@ async fn main() {
     let state = config.get_valid_state(&state_file.to_str().unwrap()).await;
     let ocr_client = match &cli.subcmd {
         Commands::Accurate => {
-            let client = ocr::BaiduOcrApis::AccurateBasic(ocr::BaiduAccurateBasic::from_state(&state));
+            let client =
+                ocr::BaiduOcrApis::AccurateBasic(ocr::BaiduAccurateBasic::from_state(&state));
             client
         }
         Commands::General => {
-            let client = ocr::BaiduOcrApis::GeneralBasic(ocr::BaiduGeneralBasic::from_state(&state));
+            let client =
+                ocr::BaiduOcrApis::GeneralBasic(ocr::BaiduGeneralBasic::from_state(&state));
             client
         }
-        _ => {unreachable!()}
+        _ => {
+            unreachable!()
+        }
     };
     let result = ocr_client.get_text_result(&img).await;
     let cliptext = result.join(get_newline());
